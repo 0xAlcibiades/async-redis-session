@@ -28,13 +28,14 @@
 use async_session::{async_trait, serde_json, Result, Session, SessionStore};
 use redis::{aio::ConnectionManager, Client, Cmd, FromRedisValue, RedisResult};
 use std::fmt::{Debug, Formatter};
+use std::sync::Arc;
 
 /// # RedisSessionStore
 /// This redis session store uses a multiplexed connection to redis with an auto-reconnect feature.
 #[derive(Clone)]
 pub struct RedisSessionStore {
     /// A `ConnectionManager` that wraps a multiplexed connection and automatically reconnects to the server when necessary.
-    connection: ConnectionManager,
+    connection: Arc<ConnectionManager>,
     /// The prefix to be used for all session keys in Redis.
     prefix: Option<String>,
 }
@@ -46,7 +47,7 @@ impl RedisSessionStore {
     /// let store = RedisSessionStore::from_uri("redis://127.0.0.1", None);
     /// ```
     pub async fn from_uri(uri: &str, prefix: Option<String>) -> RedisResult<Self> {
-        let connection = ConnectionManager::new(Client::open(uri).unwrap()).await?;
+        let connection = Arc::new(ConnectionManager::new(Client::open(uri).unwrap()).await?);
         Ok(Self { connection, prefix })
     }
 
@@ -58,7 +59,7 @@ impl RedisSessionStore {
     /// ```
     pub async fn from_client(client: Client, prefix: Option<String>) -> RedisResult<Self> {
         Ok(Self {
-            connection: client.get_tokio_connection_manager().await?,
+            connection: Arc::new(client.get_tokio_connection_manager().await?),
             prefix,
         })
     }
@@ -66,16 +67,18 @@ impl RedisSessionStore {
     /// creates a redis store from a [`redis::aio::ConnectionManager`]
     /// such as a [`String`], [`&str`](str), or [`Url`](../url/struct.Url.html)
     /// ```rust
+    /// # use std::sync::Arc;
     /// # use async_redis_session::RedisSessionStore;
+    ///
     /// fn main() -> async_session::Result { tokio_test::block_on(async {
     ///     let client = redis::Client::open("redis://127.0.0.1").unwrap();
-    ///     let connection_manager = redis::aio::ConnectionManager::new(client).await.unwrap();
+    ///     let connection_manager = Arc::new(redis::aio::ConnectionManager::new(client).await.unwrap());
     ///     let store = RedisSessionStore::new(connection_manager, None);
     ///    Ok(())
     /// }) }
     ///
     /// ```
-    pub fn new(connection: ConnectionManager, prefix: Option<String>) -> Self {
+    pub fn new(connection: Arc<ConnectionManager>, prefix: Option<String>) -> Self {
         Self { connection, prefix }
     }
 
@@ -143,7 +146,7 @@ impl RedisSessionStore {
         let mut can_retry = true;
 
         loop {
-            match cmd.query_async(&mut self.connection.clone()).await {
+            match cmd.query_async(&mut (*self.connection).clone()).await {
                 Ok(value) => return Ok(value),
                 Err(err) => {
                     if can_retry && err.is_connection_dropped() {
@@ -401,7 +404,7 @@ mod tests {
         test_store().await; // clear the db
 
         let client = Client::open("redis://127.0.0.1").unwrap();
-        let cm = ConnectionManager::new(client).await.unwrap();
+        let cm = Arc::new(ConnectionManager::new(client).await.unwrap());
         let store = RedisSessionStore::new(cm.clone(), Some("sessions/".to_string()));
 
         store.clear_store().await?;

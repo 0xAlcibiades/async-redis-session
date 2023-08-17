@@ -67,10 +67,12 @@ impl RedisSessionStore {
     /// creates a redis store from a [`redis::aio::ConnectionManager`]
     /// such as a [`String`], [`&str`](str), or [`Url`](../url/struct.Url.html)
     /// ```rust
+    /// # use std::sync::Arc;
     /// # use async_redis_session::RedisSessionStore;
+    ///
     /// fn main() -> async_session::Result { tokio_test::block_on(async {
     ///     let client = redis::Client::open("redis://127.0.0.1").unwrap();
-    ///     let connection_manager = redis::aio::ConnectionManager::new(client).await.unwrap();
+    ///     let connection_manager = Arc::new(redis::aio::ConnectionManager::new(client).await.unwrap());
     ///     let store = RedisSessionStore::new(connection_manager, None);
     ///    Ok(())
     /// }) }
@@ -402,7 +404,7 @@ mod tests {
         test_store().await; // clear the db
 
         let client = Client::open("redis://127.0.0.1").unwrap();
-        let cm = ConnectionManager::new(client).await.unwrap();
+        let cm = Arc::new(ConnectionManager::new(client).await.unwrap());
         let store = RedisSessionStore::new(cm.clone(), Some("sessions/".to_string()));
 
         store.clear_store().await?;
